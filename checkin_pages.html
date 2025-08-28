@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Check-in (Cámara + Manual)</title>
+<style>
+:root { color-scheme: dark; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin:0; background:#0f172a; color:#e5e7eb; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 20px; margin: 0 0 12px; }
+.card { background:#111827; border:1px solid #1f2937; border-radius:16px; padding:16px; margin-bottom:16px; }
+.row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; }
+label { font-size:14px; color:#cbd5e1; display:block; margin-bottom:6px; }
+input[type="text"] { width:100%; font-size:18px; padding:12px; border-radius:12px; border:1px solid #334155; background:#0b1220; color:#fff; }
+button { cursor:pointer; padding:12px 14px; border-radius:12px; border:1px solid #334155; background:#1f2937; color:#fff; }
+.status { margin-top:10px; font-weight:700; padding:12px; border-radius:12px; }
+.ok { background:#064e3b; color:#c7f9cc; border:1px solid #065f46; }
+.warn { background:#6b1110; color:#fecaca; border:1px solid #7f1d1d; }
+.muted { color:#9ca3af; font-size:12px; }
+.list { max-height: 40vh; overflow:auto; background:#0b1220; border:1px solid #253046; border-radius:12px; }
+table { width:100%; border-collapse: collapse; font-size:14px; }
+th, td { border-bottom:1px solid #1f2937; padding:8px; text-align:left; }
+.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #374151; }
+.used { background:#3f1d1d; color:#fecaca; }
+.unused { background:#1d3f27; color:#c7f9cc; }
+.err { background:#7f1d1d; color:#fff; border:1px solid #b91c1c; padding:10px; border-radius:10px; margin-bottom:10px; display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Check-in del evento</h1>
+  <div id="err" class="err"></div>
+
+  <div class="card">
+    <div class="row">
+      <div style="flex:1; min-width:280px;">
+        <label>Entrada manual (pegar token):</label>
+        <input id="manual" type="text" placeholder="Pega aquí el token"/>
+        <div class="row" style="margin-top:8px;">
+          <button id="btnValidate">Validar</button>
+          <button id="btnClear">Limpiar</button>
+        </div>
+        <div id="result" class="status muted">Esperando lectura…</div>
+      </div>
+      <div style="flex:1; min-width:280px;">
+        <label>Escaneo con cámara (https requerido):</label>
+        <div id="reader" style="width:100%; max-width:360px;"></div>
+        <div class="muted">Si no aparece la cámara, seguí usando el modo manual o revisá HTTPS/permisos.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="muted" style="flex:1;">Total: <span id="countAll">—</span> · Usados: <span id="countUsed">—</span> · Disponibles: <span id="countLeft">—</span></div>
+      <div class="row">
+        <button id="exportCsv">Exportar estado (CSV)</button>
+        <button id="resetUsed">Reiniciar usados</button>
+      </div>
+    </div>
+    <div class="list" style="margin-top:10px;">
+      <table id="table"><thead><tr><th>Ticket</th><th>Token</th><th>Estado</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script>
+// Embed tickets
+window.TICKETS = [{"ticket_id": "T-0001", "token": "d43ee267-dec0-4445-8af0-8b5d4a014c5f"}, {"ticket_id": "T-0002", "token": "38219495-bb25-4620-89ef-35d8d98b0196"}, {"ticket_id": "T-0003", "token": "b3888ec9-e5c7-445e-bd00-36a3d339c548"}, {"ticket_id": "T-0004", "token": "2d32aa5c-e1c7-41f9-b692-1a528bfe3da0"}, {"ticket_id": "T-0005", "token": "e7d93a72-8a2a-42eb-b57b-e645b4345b10"}, {"ticket_id": "T-0006", "token": "5e73a029-5bcc-4a92-b2c6-c67ce5e9b6fd"}, {"ticket_id": "T-0007", "token": "9e482a18-abb7-4bee-ac0e-e5b64b627a04"}, {"ticket_id": "T-0008", "token": "103540d6-1696-4141-89d2-c49600cb8d1f"}, {"ticket_id": "T-0009", "token": "825d9b89-baeb-485e-a710-6e91dd84ad5b"}, {"ticket_id": "T-0010", "token": "0ce1f933-1d79-4cb4-82fe-976ab8ac4e5e"}, {"ticket_id": "T-0011", "token": "7d614b69-80b3-48d2-8081-ce812ef23ab2"}, {"ticket_id": "T-0012", "token": "ac09317c-0620-4ff6-87d6-1a90a07b644d"}, {"ticket_id": "T-0013", "token": "4818a34c-5291-4c4d-be9c-439ed0d375cf"}, {"ticket_id": "T-0014", "token": "45caefa0-e5ae-4fbc-92ec-f1c1c45cf18a"}, {"ticket_id": "T-0015", "token": "84505803-f4b8-4764-b3e3-dc3893e9cb22"}, {"ticket_id": "T-0016", "token": "6c40bc73-470f-4c73-88e8-6999f77ff74d"}, {"ticket_id": "T-0017", "token": "2962384b-06f9-458b-821d-ca45158d1ba3"}, {"ticket_id": "T-0018", "token": "6b526750-89ce-4c3c-b0d6-0a5e4105a4f5"}, {"ticket_id": "T-0019", "token": "1601c4a7-49f0-4719-a3bd-c8811d1d1dab"}, {"ticket_id": "T-0020", "token": "75cb92c7-983b-451d-a3fe-0e6446b29f21"}, {"ticket_id": "T-0021", "token": "1533fede-70da-43c4-a74f-21e4b45e80a8"}, {"ticket_id": "T-0022", "token": "5328286c-e032-445e-b43f-8ff1b7cc2d81"}, {"ticket_id": "T-0023", "token": "4be63961-a6a4-4bbb-a10c-8daeafba33c6"}, {"ticket_id": "T-0024", "token": "3ee844fc-bdc9-4923-8e0e-a71ec6e13bd8"}, {"ticket_id": "T-0025", "token": "44bc56be-dab6-4d83-b9d0-504226239931"}, {"ticket_id": "T-0026", "token": "0265a2f2-51c6-43cb-b76a-02c2b47d5254"}, {"ticket_id": "T-0027", "token": "e2bfe591-a5ff-4562-ae60-f7d8da7aa383"}, {"ticket_id": "T-0028", "token": "352bf237-7e76-479c-949c-4a233749d161"}, {"ticket_id": "T-0029", "token": "1344eadd-21c5-40ef-b881-66c28d548ff8"}, {"ticket_id": "T-0030", "token": "408dbd31-f4d5-482f-9bbc-4cf2a063bd72"}, {"ticket_id": "T-0031", "token": "56e3df87-56e5-47cc-8c2b-65c767248ee5"}, {"ticket_id": "T-0032", "token": "920bd4a8-847b-4717-a247-dc3a5cc4d6d4"}, {"ticket_id": "T-0033", "token": "60e010df-8109-4bd4-85c5-dcbf48b31604"}, {"ticket_id": "T-0034", "token": "25d511dd-c622-4565-ad80-9fc467d3e895"}, {"ticket_id": "T-0035", "token": "5aa8f1c4-f6d1-4099-885a-3b54fef4345b"}, {"ticket_id": "T-0036", "token": "06fa24d0-c13e-43a8-8ec1-ae68f26a3118"}, {"ticket_id": "T-0037", "token": "21a1921b-912c-4547-a7ef-2cf7abf0440d"}, {"ticket_id": "T-0038", "token": "0628958b-008b-48dd-8bfb-b304d9652dcf"}, {"ticket_id": "T-0039", "token": "fe764b39-7d6e-4575-8b39-dfbba2f4b586"}, {"ticket_id": "T-0040", "token": "85aefdc9-5b6a-414f-a2df-1285c1a9586a"}, {"ticket_id": "T-0041", "token": "25191c25-d4c3-48f8-977f-97ad56528961"}, {"ticket_id": "T-0042", "token": "fb80ba17-206e-4607-9509-3447a088dc84"}, {"ticket_id": "T-0043", "token": "979ed05d-0dc3-48e7-a2da-0237fb03e301"}, {"ticket_id": "T-0044", "token": "771f4d06-a46b-46b4-9754-a8b81d72ee5f"}, {"ticket_id": "T-0045", "token": "b9e8b825-6a5e-4989-94d0-6ec8fe74176f"}, {"ticket_id": "T-0046", "token": "e54bd1d1-42a8-4f74-8c21-895786f34677"}, {"ticket_id": "T-0047", "token": "fce4eca5-849f-4b1b-a699-44836f3bc17d"}, {"ticket_id": "T-0048", "token": "62ea194c-4112-4b9c-a529-a2ab3f8b8e6a"}, {"ticket_id": "T-0049", "token": "7b2d710b-01e0-4558-b6f2-0fc52bd43cce"}, {"ticket_id": "T-0050", "token": "b50c7cf2-eff2-4b8d-b031-0373bba8639b"}, {"ticket_id": "T-0051", "token": "31ce7bc0-bd9b-47d0-8ba0-0664b086cbfe"}, {"ticket_id": "T-0052", "token": "954d8d24-8de4-4033-a1e0-ced69ff29963"}, {"ticket_id": "T-0053", "token": "98968676-c063-40f0-b870-8ac74c4e96c4"}, {"ticket_id": "T-0054", "token": "f0b49ffe-8f15-4c4b-9c21-7f8253e67094"}, {"ticket_id": "T-0055", "token": "b0f976cb-7ace-4903-9454-138e7cbdb62b"}, {"ticket_id": "T-0056", "token": "fdee5209-41de-49ce-949f-4a153a4b39bc"}, {"ticket_id": "T-0057", "token": "d901537f-c891-494c-9886-e0a14ab90b12"}, {"ticket_id": "T-0058", "token": "fc809b55-f6c9-42d5-aff8-01709e236da6"}, {"ticket_id": "T-0059", "token": "81e18cc1-6faa-4a40-b2dd-03ef70a05f82"}, {"ticket_id": "T-0060", "token": "12cd24e2-8efb-483b-a7c8-414263c728b4"}, {"ticket_id": "T-0061", "token": "b319bdfa-96cf-497d-9d24-8c1fbbfc6a94"}, {"ticket_id": "T-0062", "token": "5f6d6cdf-6941-4bec-ba76-e78435682f6c"}, {"ticket_id": "T-0063", "token": "7ef18b06-365f-45b9-8282-abcb53559ef9"}, {"ticket_id": "T-0064", "token": "3ca711f7-592d-4377-8b67-c3ffb460a6f5"}, {"ticket_id": "T-0065", "token": "1860e364-9594-4d84-ad49-292569bbeeff"}, {"ticket_id": "T-0066", "token": "2b02809c-39eb-403b-8406-975f225984b1"}, {"ticket_id": "T-0067", "token": "c563d1b2-9304-468a-90b5-e4c06370c39f"}, {"ticket_id": "T-0068", "token": "4eeb6a92-90ae-4530-b4f6-16d17b2702a2"}, {"ticket_id": "T-0069", "token": "dc28222f-4de3-42e4-95e6-85381d2eafde"}, {"ticket_id": "T-0070", "token": "4b59e651-4e4b-45ce-9139-9c36deac03bd"}, {"ticket_id": "T-0071", "token": "4e049371-8df8-44ec-8695-6b936f6f7afd"}, {"ticket_id": "T-0072", "token": "de86f424-120d-4e77-9ca4-a24455b099bd"}, {"ticket_id": "T-0073", "token": "00405df8-261b-4941-91a5-7abe0c9de556"}, {"ticket_id": "T-0074", "token": "64d6b227-aea9-4a22-9fa2-388acc38a347"}, {"ticket_id": "T-0075", "token": "452bfa96-09e9-4a67-acee-b26fc388c8fb"}, {"ticket_id": "T-0076", "token": "502d8bc3-47c8-4d03-9fec-c4552e6ddfb1"}, {"ticket_id": "T-0077", "token": "d8bc349a-aa4b-4141-a791-a9fd9e5eb04d"}, {"ticket_id": "T-0078", "token": "90a3ae83-57b0-4ff4-8277-f596d3e668b2"}, {"ticket_id": "T-0079", "token": "954d8fa7-a654-4fb4-8582-1bee739041c1"}, {"ticket_id": "T-0080", "token": "b5354165-80cc-4d71-929f-b3849553ea99"}, {"ticket_id": "T-0081", "token": "0de2ae68-20f8-4fe3-8ce4-96d0f47e1e03"}, {"ticket_id": "T-0082", "token": "e5cb35b3-dad0-4552-a282-238c7079c098"}, {"ticket_id": "T-0083", "token": "22e6a0cb-945a-464e-a1b7-83d4e4ecd67e"}, {"ticket_id": "T-0084", "token": "46db9a3f-780a-4640-a32e-adee59c93192"}, {"ticket_id": "T-0085", "token": "a0f8ff2a-78dd-4bd6-8f04-c386214092e2"}, {"ticket_id": "T-0086", "token": "9a7d6fdc-79c3-4da0-b912-d54321044d39"}, {"ticket_id": "T-0087", "token": "8a6f40b3-015f-46dc-97e2-b87afd6ee789"}, {"ticket_id": "T-0088", "token": "eddf0e4e-4630-438c-891e-44f892e1e438"}, {"ticket_id": "T-0089", "token": "0a440e47-edd8-485f-a3e9-436080b9be25"}, {"ticket_id": "T-0090", "token": "bcc3adfa-71de-4590-8174-e5c8d126e91e"}, {"ticket_id": "T-0091", "token": "a9b07eda-a49a-43f9-8e27-03789d6cf087"}, {"ticket_id": "T-0092", "token": "d5a3f9a6-bf8e-48c4-8976-35348bed1ca5"}, {"ticket_id": "T-0093", "token": "ee6e25ad-7f53-4b28-9109-44ea0a4d311e"}, {"ticket_id": "T-0094", "token": "ed4d980f-7180-4d97-9414-ec0c8f34160d"}, {"ticket_id": "T-0095", "token": "a7667173-6c49-4e83-8690-4a483f6e4f6a"}, {"ticket_id": "T-0096", "token": "246ce640-0d0a-4ef9-8ed3-1595b93df24b"}, {"ticket_id": "T-0097", "token": "0185494c-d25e-4ff3-8cbd-30fd7e6310c9"}, {"ticket_id": "T-0098", "token": "f5c5873c-7a11-4cb4-9eb1-aad95e4b3d8b"}, {"ticket_id": "T-0099", "token": "c46be4bf-ed41-4b2d-a8c6-2e0aec858a67"}, {"ticket_id": "T-0100", "token": "dfd5eedb-ec45-4780-a171-8693acf3073f"}];
+
+const USED_KEY = "usedTokens:v1";
+const byToken = new Map(window.TICKETS.map(t => [t.token, t]));
+let used = new Set(JSON.parse(localStorage.getItem(USED_KEY) || "[]"));
+
+const errBox = document.getElementById("err");
+function showError(msg){ errBox.textContent = msg; errBox.style.display = "block"; }
+
+const manual = document.getElementById("manual");
+const result = document.getElementById("result");
+const tbody = document.querySelector("#table tbody");
+const countAll = document.getElementById("countAll");
+const countUsed = document.getElementById("countUsed");
+const countLeft = document.getElementById("countLeft");
+
+function saveUsed(){ localStorage.setItem(USED_KEY, JSON.stringify(Array.from(used))); }
+
+function renderTable(){
+  tbody.innerHTML = "";
+  const all = window.TICKETS.length;
+  const usedCount = Array.from(used).filter(t => byToken.has(t)).length;
+  countAll.textContent = all; countUsed.textContent = usedCount; countLeft.textContent = Math.max(0, all - usedCount);
+  window.TICKETS.forEach(t => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${t.ticket_id}</td><td>${t.token}</td><td><span class="badge ${used.has(t.token) ? "used":"unused"}">${used.has(t.token) ? "USADO":"DISPONIBLE"}</span></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function validateToken(token){
+  if(!token){ result.className="status warn"; result.textContent="Token vacío."; return; }
+  token = token.trim();
+  const t = byToken.get(token);
+  if(!t){ result.className="status warn"; result.textContent="Token no encontrado. Acceso DENEGADO."; return; }
+  if(used.has(token)){ result.className="status warn"; result.textContent = `Ticket ${t.ticket_id}: YA USADO. Acceso DENEGADO.`; return; }
+  used.add(token); saveUsed(); renderTable();
+  result.className="status ok"; result.textContent = `Ticket ${t.ticket_id}: válido. Acceso PERMITIDO.`;
+}
+
+document.getElementById("btnValidate").addEventListener("click", () => validateToken(manual.value));
+document.getElementById("btnClear").addEventListener("click", () => { manual.value=""; result.className="status muted"; result.textContent="Esperando lectura…"; });
+document.getElementById("resetUsed").addEventListener("click", () => { if(confirm("¿Reiniciar usados?")){ used = new Set(); saveUsed(); renderTable(); result.className="status muted"; result.textContent="Reiniciado."; }});
+document.getElementById("exportCsv").addEventListener("click", () => {
+  const rows = [["ticket_id","token","estado"]];
+  window.TICKETS.forEach(t => rows.push([t.ticket_id, t.token, used.has(t.token) ? "USADO":"DISPONIBLE"]));
+  const csv = rows.map(r => r.map(x => `"${String(x).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob); const a = document.createElement("a");
+  a.href = url; a.download = "estado_checkin.csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+});
+
+renderTable();
+
+// Camera setup (graceful)
+(function setupCamera(){
+  const isSecure = location.protocol === "https:" || location.hostname === "localhost";
+  if(!isSecure){ showError("La cámara requiere HTTPS o localhost. Usá el modo manual o abre esta página en https."); return; }
+  const script = document.createElement("script");
+  script.src = "https://unpkg.com/html5-qrcode";
+  script.onload = () => {
+    if(!window.Html5Qrcode){ showError("Librería de cámara cargada pero no disponible."); return; }
+    try{
+      const reader = new Html5Qrcode("reader");
+      Html5Qrcode.getCameras().then(cams => {
+        if(!cams || !cams.length){ showError("No se detectan cámaras. Usá modo manual."); return; }
+        reader.start(cams[0].id, {fps:10, qrbox:220}, (text) => { manual.value = text; validateToken(text); })
+          .catch(e => showError("Error iniciando cámara: "+e));
+      }).catch(e => showError("No se pudo acceder a cámaras: "+e));
+    }catch(e){ showError("Error configurando cámara: "+e); }
+  };
+  script.onerror = () => showError("No se pudo cargar la librería de cámara (CDN). Seguí con el modo manual.");
+  document.head.appendChild(script);
+})();
+</script>
+</body>
+</html>
