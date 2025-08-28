@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Check‑in | Escaneo y validación</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; background: #0f172a; color: #fff; }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; font-size: 14px; margin-bottom: 6px; color: #d1d5db; }
+    input[type="text"] { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #374151; background: #0b1220; color: #fff; }
+    button { cursor: pointer; padding: 10px 14px; border-radius: 10px; border: 1px solid #374151; background: #1f2937; color: #fff; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .status { font-weight: bold; padding: 10px 12px; border-radius: 10px; display: inline-block; margin-top: 8px; }
+    .ok { background: #064e3b; color: #c7f9cc; border: 1px solid #065f46; }
+    .warn { background: #6b1110; color: #fecaca; border: 1px solid #7f1d1d; }
+    .muted { color: #9ca3af; font-size: 12px; }
+    .small { font-size: 12px; }
+    .list { max-height: 260px; overflow: auto; background: #0b1220; border: 1px solid #253046; border-radius: 10px; padding: 8px; }
+    .list table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .list th, .list td { padding: 6px 8px; border-bottom: 1px solid #1f2937; text-align: left; }
+    .badge { display: inline-block; padding: 2px 6px; border-radius: 8px; font-size: 12px; border: 1px solid #374151; margin-left: 6px; }
+    .used { background: #3f1d1d; color: #fecaca; }
+    .unused { background: #1d3f27; color: #c7f9cc; }
+    .qr-box { width: 320px; max-width: 100%; }
+    .hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .hdr .right { display: flex; gap: 8px; align-items: center; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <h1>Check‑in del evento</h1>
+    <div class="right">
+      <button id="exportCsv">Exportar estado (CSV)</button>
+      <button id="resetUsed">Reiniciar usados</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <div class="qr-box">
+        <!-- Camera scanner -->
+        <div id="reader" style="width:100%;"></div>
+        <div class="small muted">Si la cámara no funciona o no hay internet, usa la entrada manual.</div>
+      </div>
+      <div style="flex:1; min-width: 280px;">
+        <label>Entrada manual (pegar token escaneado):</label>
+        <input id="manual" type="text" placeholder="Pega aquí el token" />
+        <div style="margin-top: 8px" class="row">
+          <button id="btnValidate">Validar</button>
+          <button id="btnClear">Limpiar</button>
+        </div>
+        <div id="result" class="status muted">Esperando lectura…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <div style="flex:1;">
+        <div class="small muted">Total generados: <span id="countAll">—</span> · Usados: <span id="countUsed">—</span> · Disponibles: <span id="countLeft">—</span></div>
+      </div>
+    </div>
+    <div class="list" style="margin-top: 10px;">
+      <table id="table">
+        <thead>
+          <tr><th>Ticket</th><th>Token</th><th>Estado</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="small muted">
+    Consejos: usa un único dispositivo para check‑in con este archivo (o sincroniza con un backend para múltiples puntos).
+    Si el QR trae un <em>token</em> que no está en la lista o ya está usado, se rechazará.
+  </div>
+</div>
+
+<!-- Camera scanning lib (requires internet) -->
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+// Embed tickets here (generated)
+window.TICKETS = [
+  {
+    "ticket_id": "T-0001",
+    "token": "28253b39-b87a-43fe-9dbf-70fc4d307bb0"
+  },
+  {
+    "ticket_id": "T-0002",
+    "token": "0e70b2f5-2aee-46a5-a8dc-b432f4cc6133"
+  },
+  {
+    "ticket_id": "T-0003",
+    "token": "ff828e67-14a6-4f2b-b781-26382ce8ab12"
+  },
+  {
+    "ticket_id": "T-0004",
+    "token": "885552fa-42ee-4dbd-a14b-f2905454061e"
+  },
+  {
+    "ticket_id": "T-0005",
+    "token": "e9b788cf-e1c7-49f8-872c-4a4d48ce17bc"
+  },
+  {
+    "ticket_id": "T-0006",
+    "token": "a12ab0cd-94c2-4060-87da-d14beb37ceac"
+  },
+  {
+    "ticket_id": "T-0007",
+    "token": "eb96fdba-7999-49ae-955d-5f74b7aaca24"
+  },
+  {
+    "ticket_id": "T-0008",
+    "token": "677cc918-fa4a-49fb-9af1-f152cc839b0c"
+  },
+  {
+    "ticket_id": "T-0009",
+    "token": "fd62abfb-4299-429f-b6d1-d5a37f50503b"
+  },
+  {
+    "ticket_id": "T-0010",
+    "token": "93bf7e3b-069b-4495-a97c-70eabd84a908"
+  },
+  {
+    "ticket_id": "T-0011",
+    "token": "909d847c-d652-47cc-89f0-7daca1dfae48"
+  },
+  {
+    "ticket_id": "T-0012",
+    "token": "60278755-aab0-476f-bafc-fa21dd82b5db"
+  },
+  {
+    "ticket_id": "T-0013",
+    "token": "475f7952-24d1-4c40-8c7c-c9cad669790a"
+  },
+  {
+    "ticket_id": "T-0014",
+    "token": "2b61ff5c-00ba-4bac-ae1a-2d69ecee73c1"
+  },
+  {
+    "ticket_id": "T-0015",
+    "token": "476ae9e8-1371-4b1f-8a9f-45e4fd78c341"
+  },
+  {
+    "ticket_id": "T-0016",
+    "token": "f9e3f952-0385-44fe-8ac5-27037ce168a4"
+  },
+  {
+    "ticket_id": "T-0017",
+    "token": "d9058b96-5a3f-48ea-8d5d-f35d38c41c7e"
+  },
+  {
+    "ticket_id": "T-0018",
+    "token": "b2c44bd7-0e2d-485d-a3fd-a58c05c9de14"
+  },
+  {
+    "ticket_id": "T-0019",
+    "token": "118f0980-e057-42e7-9bf7-b94827db14f4"
+  },
+  {
+    "ticket_id": "T-0020",
+    "token": "c8619c7a-0f7d-46d7-b198-d0830bc97628"
+  },
+  {
+    "ticket_id": "T-0021",
+    "token": "e4ceba37-b77f-4b2d-aad1-1e5007756c3e"
+  },
+  {
+    "ticket_id": "T-0022",
+    "token": "d4f50f20-0adc-457f-91f4-45e14cb65f17"
+  },
+  {
+    "ticket_id": "T-0023",
+    "token": "fd4b9e68-17fc-4312-9596-f432cc1d66ce"
+  },
+  {
+    "ticket_id": "T-0024",
+    "token": "8a246a2d-3167-43b0-8ad0-9499836f7024"
+  },
+  {
+    "ticket_id": "T-0025",
+    "token": "06e3c986-ab50-4d41-9ae2-3a02b46a5e92"
+  },
+  {
+    "ticket_id": "T-0026",
+    "token": "16191ea7-62e5-4fd9-8c4a-674111b0cac1"
+  },
+  {
+    "ticket_id": "T-0027",
+    "token": "41d61f54-b56b-4501-88db-efe469480722"
+  },
+  {
+    "ticket_id": "T-0028",
+    "token": "9a78a064-d989-4b14-8612-b15e7dc41dd0"
+  },
+  {
+    "ticket_id": "T-0029",
+    "token": "bb60c5c1-5538-4837-b9bb-f63495981789"
+  },
+  {
+    "ticket_id": "T-0030",
+    "token": "bd3955a3-4ddf-4c7b-bd8a-6405c6c34454"
+  },
+  {
+    "ticket_id": "T-0031",
+    "token": "a2be5ede-5871-4c65-86cd-08fe420f03f1"
+  },
+  {
+    "ticket_id": "T-0032",
+    "token": "e9d3db1c-da15-43eb-8dbc-0f9213f0318a"
+  },
+  {
+    "ticket_id": "T-0033",
+    "token": "3156acc1-ac67-46fa-ab9d-a6ba0ca96258"
+  },
+  {
+    "ticket_id": "T-0034",
+    "token": "7bca4a7f-d241-4cca-a4a6-387dddcbdea2"
+  },
+  {
+    "ticket_id": "T-0035",
+    "token": "d18bddda-b55f-40ee-b78c-3d25da914c45"
+  },
+  {
+    "ticket_id": "T-0036",
+    "token": "d7b0d4e9-a694-48cd-9b8c-c50a2358ed4e"
+  },
+  {
+    "ticket_id": "T-0037",
+    "token": "6b768650-9b37-4dfb-8224-7718f043573f"
+  },
+  {
+    "ticket_id": "T-0038",
+    "token": "b7fdbe78-4ff9-4c35-b37f-0ff0a9bddd45"
+  },
+  {
+    "ticket_id": "T-0039",
+    "token": "66670e1c-15cb-4ef5-92f3-060cfc520a85"
+  },
+  {
+    "ticket_id": "T-0040",
+    "token": "27c2bc20-9cf0-4152-b70d-425f8f8ab2e0"
+  },
+  {
+    "ticket_id": "T-0041",
+    "token": "d19e9cae-33f3-4593-a4f3-b3b61864d4af"
+  },
+  {
+    "ticket_id": "T-0042",
+    "token": "e9d93e92-5737-42ba-ac08-6821e0df8a88"
+  },
+  {
+    "ticket_id": "T-0043",
+    "token": "ccc6c5e1-e6ce-4e70-95ab-bdee4bbfc339"
+  },
+  {
+    "ticket_id": "T-0044",
+    "token": "39e2b9a1-3990-461e-86d0-80316b6a5ac6"
+  },
+  {
+    "ticket_id": "T-0045",
+    "token": "0b27ab5b-a27b-4768-bcd1-9445c858cd5d"
+  },
+  {
+    "ticket_id": "T-0046",
+    "token": "86c31e94-18c6-4ec5-ab21-8934fc0ac008"
+  },
+  {
+    "ticket_id": "T-0047",
+    "token": "89390063-c338-4c0a-9b66-e15d0f0a3844"
+  },
+  {
+    "ticket_id": "T-0048",
+    "token": "b0dcce37-908a-45e1-8979-7ae48e65cc07"
+  },
+  {
+    "ticket_id": "T-0049",
+    "token": "b05b496e-42e8-4629-9f59-0f9c21112823"
+  },
+  {
+    "ticket_id": "T-0050",
+    "token": "d80006e4-16aa-462c-9a99-3bf30408078e"
+  },
+  {
+    "ticket_id": "T-0051",
+    "token": "6a182ded-ac70-400b-95c6-7d255ead54b0"
+  },
+  {
+    "ticket_id": "T-0052",
+    "token": "d4a7e50c-9e96-4989-8e6e-effe645da04e"
+  },
+  {
+    "ticket_id": "T-0053",
+    "token": "2d43508b-ff18-4fcc-ba72-18784e77f581"
+  },
+  {
+    "ticket_id": "T-0054",
+    "token": "b71a92d2-6050-4a8d-bb0e-678bb646832b"
+  },
+  {
+    "ticket_id": "T-0055",
+    "token": "829e44f6-ab6e-4453-8b11-917ce661116d"
+  },
+  {
+    "ticket_id": "T-0056",
+    "token": "4181d669-7627-40e8-8667-0040aee10de3"
+  },
+  {
+    "ticket_id": "T-0057",
+    "token": "f22fbbd1-90e5-4686-82eb-f7ffdad01b94"
+  },
+  {
+    "ticket_id": "T-0058",
+    "token": "fdfc576e-9570-4771-bf45-7aa59ee35691"
+  },
+  {
+    "ticket_id": "T-0059",
+    "token": "88df1942-cd9a-425d-9c61-89257d32f3f9"
+  },
+  {
+    "ticket_id": "T-0060",
+    "token": "f91d809d-9784-4ef1-a6f4-1061a6779157"
+  },
+  {
+    "ticket_id": "T-0061",
+    "token": "34b85eae-8e31-42b5-8428-d3f2c23f405e"
+  },
+  {
+    "ticket_id": "T-0062",
+    "token": "6dff9dbe-9adc-490e-bcab-c76e3edb6fec"
+  },
+  {
+    "ticket_id": "T-0063",
+    "token": "631508b7-d1cf-4e06-9ff2-cdee738ba1b6"
+  },
+  {
+    "ticket_id": "T-0064",
+    "token": "78827617-dea8-4922-bbad-f85d5654b306"
+  },
+  {
+    "ticket_id": "T-0065",
+    "token": "f2920dbc-efac-4c47-a106-3eaf4c940d1e"
+  },
+  {
+    "ticket_id": "T-0066",
+    "token": "4e81c77d-a919-4b84-81fd-a95f0a735110"
+  },
+  {
+    "ticket_id": "T-0067",
+    "token": "7b0da808-b69b-446a-8bf1-7fb80214df2d"
+  },
+  {
+    "ticket_id": "T-0068",
+    "token": "ca1ba205-e20a-4893-ae9e-a6d0f3272e74"
+  },
+  {
+    "ticket_id": "T-0069",
+    "token": "964bf203-7fe0-458e-a00f-5471eb0a0ddc"
+  },
+  {
+    "ticket_id": "T-0070",
+    "token": "198f9818-754c-484a-a70e-2b0e2cd9323d"
+  },
+  {
+    "ticket_id": "T-0071",
+    "token": "0d53d0bc-4297-4c7f-a33c-f219361a8b28"
+  },
+  {
+    "ticket_id": "T-0072",
+    "token": "78a3de65-23d8-48ab-b066-5d0b79cdbbfd"
+  },
+  {
+    "ticket_id": "T-0073",
+    "token": "7bf47fde-1fa3-4c8a-a3b7-fb28b613e1d1"
+  },
+  {
+    "ticket_id": "T-0074",
+    "token": "d68840e9-7ae1-4241-b69d-0ec0f597d21d"
+  },
+  {
+    "ticket_id": "T-0075",
+    "token": "017baa37-97c0-4898-9a4f-4622656a8147"
+  },
+  {
+    "ticket_id": "T-0076",
+    "token": "b91206fb-e77a-40f0-bacc-22f5d9d2c373"
+  },
+  {
+    "ticket_id": "T-0077",
+    "token": "bb6f479c-5271-4ed7-a0b8-4990d9379feb"
+  },
+  {
+    "ticket_id": "T-0078",
+    "token": "91506038-d4bb-413e-9f15-e3da821e4f32"
+  },
+  {
+    "ticket_id": "T-0079",
+    "token": "b266b5ea-eb01-4ae8-a738-2a670aee4a31"
+  },
+  {
+    "ticket_id": "T-0080",
+    "token": "91cb042a-e538-41d7-8bd8-ec2f60620754"
+  },
+  {
+    "ticket_id": "T-0081",
+    "token": "44845749-5ebf-4c6a-84fc-2a61a410fdbd"
+  },
+  {
+    "ticket_id": "T-0082",
+    "token": "5a23153d-d60c-4eba-9d8d-647d26c0e1b0"
+  },
+  {
+    "ticket_id": "T-0083",
+    "token": "f56c7f82-6897-48ab-9ba8-e8591f5102f6"
+  },
+  {
+    "ticket_id": "T-0084",
+    "token": "04af2dae-ce80-47da-babc-7f87403150e2"
+  },
+  {
+    "ticket_id": "T-0085",
+    "token": "15677179-ea3b-43ef-b982-15c2604caa80"
+  },
+  {
+    "ticket_id": "T-0086",
+    "token": "8d5ae986-e852-45f5-9580-76d3ea0148ab"
+  },
+  {
+    "ticket_id": "T-0087",
+    "token": "85329fdf-fdc2-4650-ad2d-3bc6a893e855"
+  },
+  {
+    "ticket_id": "T-0088",
+    "token": "3642fc8e-4fba-4ded-9478-a0e3fb79755e"
+  },
+  {
+    "ticket_id": "T-0089",
+    "token": "25f173d2-f872-42b1-aa75-21da65953cfd"
+  },
+  {
+    "ticket_id": "T-0090",
+    "token": "20db8d11-72dc-4f79-a314-d0505e91e939"
+  },
+  {
+    "ticket_id": "T-0091",
+    "token": "06926756-4216-49b0-a75d-5cb079a0fcf3"
+  },
+  {
+    "ticket_id": "T-0092",
+    "token": "83e4c09f-dd0f-4333-ba82-2a1542934464"
+  },
+  {
+    "ticket_id": "T-0093",
+    "token": "cc39f09f-6b39-4e9f-96f9-b4a659e82d47"
+  },
+  {
+    "ticket_id": "T-0094",
+    "token": "6ff5646b-64d2-4612-b84d-1f526855d749"
+  },
+  {
+    "ticket_id": "T-0095",
+    "token": "52cb74d6-277b-4275-8caa-62ea121b339d"
+  },
+  {
+    "ticket_id": "T-0096",
+    "token": "a025fe6e-6ea2-481d-b416-968f5a9764ef"
+  },
+  {
+    "ticket_id": "T-0097",
+    "token": "3766cf92-fdb9-4fa4-a6a3-a5b66045967e"
+  },
+  {
+    "ticket_id": "T-0098",
+    "token": "3082d755-db7a-47ed-92c5-0524eeef8ba3"
+  },
+  {
+    "ticket_id": "T-0099",
+    "token": "cf521d1c-a32e-468c-822c-1306236af8b6"
+  },
+  {
+    "ticket_id": "T-0100",
+    "token": "a6bf46f5-11fa-463e-a70e-70e6aa2ec532"
+  }
+];
+
+// -- LocalStorage helpers --
+const USED_KEY = "usedTokens:v1";
+const loadUsed = () => new Set(JSON.parse(localStorage.getItem(USED_KEY) || "[]"));
+const saveUsed = (set) => localStorage.setItem(USED_KEY, JSON.stringify(Array.from(set)));
+
+// -- Ticket index --
+const byToken = new Map(window.TICKETS.map(t => [t.token, t]));
+let used = loadUsed();
+
+// -- UI elements --
+const manual = document.getElementById("manual");
+const result = document.getElementById("result");
+const tbody = document.querySelector("#table tbody");
+const countAll = document.getElementById("countAll");
+const countUsed = document.getElementById("countUsed");
+const countLeft = document.getElementById("countLeft");
+const btnValidate = document.getElementById("btnValidate");
+const btnClear = document.getElementById("btnClear");
+const btnReset = document.getElementById("resetUsed");
+const btnExport = document.getElementById("exportCsv");
+
+// -- Render table --
+function renderTable() {
+  tbody.innerHTML = "";
+  const all = window.TICKETS.length;
+  const usedCount = Array.from(used).filter(t => byToken.has(t)).length;
+  countAll.textContent = all;
+  countUsed.textContent = usedCount;
+  countLeft.textContent = Math.max(0, all - usedCount);
+
+  window.TICKETS.forEach(t => {
+    const tr = document.createElement("tr");
+    const td1 = document.createElement("td"); td1.textContent = t.ticket_id;
+    const td2 = document.createElement("td"); td2.textContent = t.token;
+    const td3 = document.createElement("td");
+    const span = document.createElement("span");
+    span.className = "badge " + (used.has(t.token) ? "used" : "unused");
+    span.textContent = used.has(t.token) ? "USADO" : "DISPONIBLE";
+    td3.appendChild(span);
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    tbody.appendChild(tr);
+  });
+}
+
+// -- Validate logic --
+function validateToken(token) {
+  if (!token) {
+    result.className = "status warn";
+    result.textContent = "Token vacío.";
+    return;
+  }
+  const t = byToken.get(token.trim());
+  if (!t) {
+    result.className = "status warn";
+    result.textContent = "Token no encontrado. Acceso DENEGADO.";
+    return;
+  }
+  if (used.has(token)) {
+    result.className = "status warn";
+    result.textContent = `Ticket ${t.ticket_id}: YA USADO. Acceso DENEGADO.`;
+    return;
+  }
+  used.add(token);
+  saveUsed(used);
+  renderTable();
+  result.className = "status ok";
+  result.textContent = `Ticket ${t.ticket_id}: válido. Acceso PERMITIDO.`;
+}
+
+btnValidate.addEventListener("click", () => validateToken(manual.value));
+btnClear.addEventListener("click", () => { manual.value = ""; result.className = "status muted"; result.textContent = "Esperando lectura…"; });
+btnReset.addEventListener("click", () => {
+  if (confirm("¿Reiniciar el estado de TODOS los tickets a DISPONIBLE en este dispositivo?")) {
+    used = new Set();
+    saveUsed(used);
+    renderTable();
+    result.className = "status muted";
+    result.textContent = "Reiniciado. Esperando lectura…";
+  }
+});
+btnExport.addEventListener("click", () => {
+  // Export CSV of current state
+  const rows = [["ticket_id","token","estado"]];
+  window.TICKETS.forEach(t => {
+    rows.push([t.ticket_id, t.token, used.has(t.token) ? "USADO" : "DISPONIBLE"]);
+  });
+  const csv = rows.map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], {{type: "text/csv;charset=utf-8;"}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "estado_checkin.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+renderTable();
+
+// -- QR Scanner setup (camera) --
+if (window.Html5Qrcode) {
+  const reader = new Html5Qrcode("reader");
+  const config = {{ fps: 10, qrbox: 220 }};
+  Html5Qrcode.getCameras().then(cams => {
+    const camId = (cams && cams.length) ? cams[0].id : null;
+    if (!camId) return;
+    reader.start(camId, config, (decodedText) => {
+      manual.value = decodedText;
+      validateToken(decodedText);
+    }).catch(err => { console.warn("Cam error", err); });
+  }).catch(err => console.warn("No cameras", err));
+}
+</script>
+</body>
+</html>
