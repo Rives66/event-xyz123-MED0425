@@ -1,1 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Check-in</title>
+<style>
+:root { color-scheme: dark; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin:0; background:#0f172a; color:#e5e7eb; }
+.wrap { max-width: 700px; margin: 0 auto; padding: 16px; }
+.card { background:#111827; border:1px solid #1f2937; border-radius:16px; padding:16px; margin-top:16px; }
+input { width:100%; font-size:18px; padding:12px; border-radius:12px; border:1px solid #334155; background:#0b1220; color:#fff; }
+button { cursor:pointer; padding:12px; border-radius:12px; border:1px solid #334155; background:#1f2937; color:#fff; margin-right:8px;}
+.status { margin-top:10px; font-weight:700; padding:12px; border-radius:12px; }
+.ok { background:#064e3b; color:#c7f9cc; border:1px solid #065f46; }
+.warn { background:#6b1110; color:#fecaca; border:1px solid #7f1d1d; }
+.muted { color:#9ca3af; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Check-in (mínimo)</h1>
+
+  <div class="card">
+    <div class="muted">Prueba manual con el token de ejemplo: <b>TEST-TOKEN-123</b></div>
+    <input id="tok" placeholder="Pega aquí el token"/>
+    <div style="margin-top:8px">
+      <button id="btn">Validar</button>
+    </div>
+    <div id="out" class="status">Esperando…</div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Luego agregamos cámara. Primero comprobemos que la validación actualiza la Hoja.</div>
+  </div>
+</div>
+
+<script>
+const out = document.getElementById('out');
+function set(cls, txt){ out.className = 'status ' + (cls||''); out.textContent = txt; }
+
+document.getElementById('btn').onclick = () => {
+  const token = document.getElementById('tok').value.trim();
+  if(!token) return set('warn','Token vacío.');
+  google.script.run
+    .withSuccessHandler((data)=>{
+      if (data.ok && data.status==='PERMITIDO') set('ok', `Ticket ${data.ticket_id}: PERMITIDO`);
+      else if (data.status==='YA_USADO') set('warn', `YA USADO (${data.usado_en||'—'})`);
+      else if (data.error==='NO_ENCONTRADO') set('warn','NO ENCONTRADO');
+      else set('warn','Error de validación');
+    })
+    .withFailureHandler(e=> set('warn','Error de servidor: ' + e))
+    .validate(token, navigator.userAgent||'mobile');
+};
+</script>
+</body>
+</html>
 
