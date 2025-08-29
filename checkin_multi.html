@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Check-in MULTI (Google Sheets API)</title>
+<style>
+:root { color-scheme: dark; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin:0; background:#0f172a; color:#e5e7eb; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+.card { background:#111827; border:1px solid #1f2937; border-radius:16px; padding:16px; margin-bottom:16px; }
+.row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; }
+label { font-size:14px; color:#cbd5e1; display:block; margin-bottom:6px; }
+input[type="text"] { width:100%; font-size:18px; padding:12px; border-radius:12px; border:1px solid #334155; background:#0b1220; color:#fff; }
+button, select { cursor:pointer; padding:10px 12px; border-radius:12px; border:1px solid #334155; background:#1f2937; color:#fff; }
+.status { margin-top:10px; font-weight:700; padding:12px; border-radius:12px; }
+.ok { background:#064e3b; color:#c7f9cc; border:1px solid #065f46; }
+.warn { background:#6b1110; color:#fecaca; border:1px solid #7f1d1d; }
+.err { background:#7f1d1d; color:#fff; border:1px solid #b91c1c; padding:10px; border-radius:10px; margin-bottom:10px; display:none; }
+.muted { color:#9ca3af; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Check-in MULTI (Google Sheets)</h1>
+  <div id="err" class="err"></div>
+
+  <div class="card">
+    <div class="row">
+      <div style="flex:1; min-width:280px;">
+        <label>Entrada manual (pegar token):</label>
+        <input id="manual" type="text" placeholder="Pega aquí el token"/>
+        <div class="row" style="margin-top:8px;">
+          <button id="btnValidate">Validar</button>
+          <button id="btnClear">Limpiar</button>
+        </div>
+        <div id="result" class="status">Esperando lectura…</div>
+      </div>
+      <div style="flex:1; min-width:280px;">
+        <div class="row" style="align-items:center; margin-bottom:8px;">
+          <label for="cameraSelect" style="margin:0;">Cámara:</label>
+          <select id="cameraSelect" title="Elegí la cámara"></select>
+          <button id="btnSwitch">Usar seleccionada</button>
+        </div>
+        <div id="reader" style="width:100%; max-width:360px;"></div>
+        <div class="muted">HTTPS requerido. Si los nombres aparecen vacíos en iPhone, primero concede permiso de cámara.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted">*Tip: compartí esta misma URL entre varios dispositivos para check‑in simultáneo. La hoja se actualiza en tiempo real.</div>
+  </div>
+</div>
+
+<script>
+const ENDPOINT = https://script.google.com/macros/s/AKfycbzFOy4pN4voK2IpzqFRZS8-aOcGC4HuJZz8dlNiGwrrYfKnNFDrex-onqBJ_kgGck6n/exec; // pega tu /exec aquí
+
+const errBox = document.getElementById("err");
+const manual = document.getElementById("manual");
+const result = document.getElementById("result");
+const cameraSelect = document.getElementById("cameraSelect");
+let reader;
+
+function showError(msg){ errBox.textContent = msg; errBox.style.display = "block"; }
+
+async function validateViaAPI(token){
+  const payload = { token: String(token||'').trim(), device: navigator.userAgent||'mobile' };
+  const res = await fetch(ENDPOINT, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  const data = await res.json();
+  return data;
+}
+
+async function onValidate(){
+  const token = manual.value.trim();
+  if(!token){ result.className="status warn"; result.textContent="Token vacío."; return; }
+  try {
+    const data = await validateViaAPI(token);
+    if (data.ok && data.status === 'PERMITIDO') {
+      result.className = "status ok";
+      result.textContent = `Ticket ${data.ticket_id}: válido. Acceso PERMITIDO.`;
+    } else if (data.status === 'YA_USADO') {
+      result.className = "status warn";
+      result.textContent = `Ticket ${data.ticket_id}: YA USADO. DENEGADO. (Usado en: ${data.usado_en||'—'})`;
+    } else if (data.error === 'NO_ENCONTRADO') {
+      result.className = "status warn";
+      result.textContent = "Token no encontrado. DENEGADO.";
+    } else {
+      result.className = "status warn";
+      result.textContent = "Error al validar.";
+    }
+  } catch(e){
+    result.className = "status warn";
+    result.textContent = "No se pudo contactar la API.";
+  }
+}
+
+document.getElementById("btnValidate").addEventListener("click", onValidate);
+document.getElementById("btnClear").addEventListener("click", ()=>{ manual.value=""; result.className="status"; result.textContent="Esperando lectura…"; });
+
+(function setupCamera(){
+  const isSecure = location.protocol === "https:" || location.hostname === "localhost";
+  if(!isSecure){ showError("La cámara requiere HTTPS o localhost. Usá el modo manual o abrí esta página en https."); return; }
+  const script = document.createElement("script");
+  script.src = "https://unpkg.com/html5-qrcode";
+  script.onload = () => {
+    if(!window.Html5Qrcode){ showError("Librería de cámara no disponible."); return; }
+    Html5Qrcode.getCameras().then(cams => {
+      if(!cams || !cams.length){ showError("No se detectan cámaras. Usá modo manual."); return; }
+      cameraSelect.innerHTML = "";
+      cams.forEach((c,i)=>{
+        const opt = document.createElement("option");
+        opt.value = c.id; opt.textContent = c.label || ("Cámara " + (i+1));
+        cameraSelect.appendChild(opt);
+      });
+      const prefer = cams.find(c => /back|rear|environment/i.test(c.label||""));
+      const camId = (prefer || cams[0]).id;
+      reader = new Html5Qrcode("reader");
+      reader.start(camId, {fps:10, qrbox:220}, (text)=>{ manual.value = text; onValidate(); })
+        .catch(e => showError("Error iniciando cámara: " + e));
+      document.getElementById("btnSwitch").addEventListener("click", ()=>{
+        const id = cameraSelect.value;
+        if(!id) return;
+        reader.stop().then(()=>{
+          reader.start(id, {fps:10, qrbox:220}, (text)=>{ manual.value = text; onValidate(); })
+            .catch(e => showError("Error iniciando cámara: " + e));
+        });
+      });
+    }).catch(e => showError("No se pudo acceder a cámaras: " + e));
+  };
+  script.onerror = () => showError("No se pudo cargar la librería de cámara (CDN).");
+  document.head.appendChild(script);
+})();
+</script>
+</body>
+</html>
